@@ -1,0 +1,186 @@
+index.html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wildlife Bingo — Player vs Computer</title>
+<style>
+  :root{--cell:64px;--gap:6px}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:#222;color:#111;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+  .overlay{position:fixed;inset:0;background-size:cover;background-position:center;filter:blur(0px) brightness(.85);z-index:-1}
+  .container{max-width:960px;padding:18px;width:100%;box-sizing:border-box}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;color:#fff}
+  h1{margin:0;font-size:1.25rem}
+  .controls{display:flex;gap:8px;align-items:center}
+  select,input[type=button]{padding:8px;border-radius:6px;border:0;background:#fff;color:#222;font-weight:600}
+  .boards{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+  .panel{background:rgba(255,255,255,0.08);padding:12px;border-radius:10px;color:#fff;min-width:fit-content}
+  .panel h2{margin:0 0 10px 0;font-size:1rem}
+  .grid{display:grid;grid-template-columns:repeat(5, var(--cell));grid-auto-rows:var(--cell);gap:var(--gap)}
+  .cell{display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:8px;font-weight:700;cursor:pointer;user-select:none}
+  .cell.marked-player{background:rgba(46, 204, 113, 0.85);color:#003300}
+  .cell.marked-computer{background:rgba(241, 196, 15,0.95);color:#4b2e00}
+  .cell.marked-both{background:linear-gradient(135deg, rgba(46,204,113,0.85), rgba(241,196,15,0.9)); color:#06260a}
+  #status{margin-top:12px;color:#fff;font-weight:600}
+  footer{margin-top:18px;color:#ddd;font-size:0.9rem}
+</style>
+</head>
+<body>
+  <div id="bg" class="overlay"></div>
+  <div class="container">
+    <header>
+      <h1>🦁 Wildlife Bingo — Player vs Computer</h1>
+      <div class="controls">
+        <label for="level">Level</label>
+        <select id="level">
+          <option value="easy">Easy — Panda</option>
+          <option value="medium">Medium — Deer</option>
+          <option value="hard">Hard — Lion</option>
+        </select>
+        <input type="button" id="btnStart" value="Start Game"/>
+      </div>
+    </header>
+
+    <section class="boards">
+      <div class="panel" id="playerPanel">
+        <h2>Player</h2>
+        <div class="grid" id="playerGrid"></div>
+      </div>
+
+      <div class="panel" id="computerPanel">
+        <h2>Computer</h2>
+        <div class="grid" id="computerGrid"></div>
+      </div>
+    </section>
+
+    <div id="status">Choose a level and start the game.</div>
+  </div>
+
+<script>
+(function(){
+  const GRID = 5, MAX = 25;
+  const playerGridEl = document.getElementById('playerGrid');
+  const computerGridEl = document.getElementById('computerGrid');
+  const btnStart = document.getElementById('btnStart');
+  const levelSel = document.getElementById('level');
+  const statusEl = document.getElementById('status');
+  const bg = document.getElementById('bg');
+
+  let playerBoard = [], compBoard = [];
+  let playerMarked = new Set(), compMarked = new Set();
+  let remaining = [];
+  let turn = 'player';
+  let gameOver = false;
+
+  const backgrounds = { easy: 'panda.jpg', medium: 'deer.jpg', hard: 'lion.jpg' };
+
+  function newGame(){
+    gameOver=false;
+    playerMarked.clear(); compMarked.clear();
+    remaining = shuffle([...Array(MAX).keys()].map(i=>i+1));
+    playerBoard = chunk(shuffle([...Array(MAX).keys()].map(i=>i+1)), GRID);
+    compBoard = chunk(shuffle([...Array(MAX).keys()].map(i=>i+1)), GRID);
+    bg.style.backgroundImage = `url(${backgrounds[levelSel.value]||''})`;
+    render();
+    turn='player';
+    updateStatus("Your turn!");
+  }
+
+  function render(){
+    playerGridEl.innerHTML='';
+    computerGridEl.innerHTML='';
+    for(let r=0;r<GRID;r++){
+      for(let c=0;c<GRID;c++){
+        const num=playerBoard[r][c];
+        const cell=document.createElement('div');
+        cell.className='cell';
+        cell.textContent=num;
+        cell.onclick=()=>playerPick(num);
+        playerGridEl.appendChild(cell);
+
+        const cnum=compBoard[r][c];
+        const cc=document.createElement('div');
+        cc.className='cell';
+        cc.textContent=cnum;
+        computerGridEl.appendChild(cc);
+      }
+    }
+    refreshMarks();
+  }
+
+  function refreshMarks(){
+    const update=(elSet,marked)=>{
+      [...elSet.children].forEach(el=>{
+        const n=Number(el.textContent);
+        el.classList.remove('marked-player','marked-computer','marked-both');
+        const p=playerMarked.has(n), c=compMarked.has(n);
+        if(p&&c) el.classList.add('marked-both');
+        else if(p) el.classList.add('marked-player');
+        else if(c) el.classList.add('marked-computer');
+      });
+    };
+    update(playerGridEl);
+    update(computerGridEl);
+  }
+
+  function playerPick(num){
+    if(gameOver||turn!=='player'||!remaining.includes(num))return;
+    applyPick(num);
+    if(checkWin())return;
+    turn='computer';
+    updateStatus("Computer thinking...");
+    setTimeout(computerTurn, 800);
+  }
+
+  function computerTurn(){
+    if(gameOver)return;
+    const pick = remaining[Math.floor(Math.random()*remaining.length)];
+    applyPick(pick);
+    if(checkWin())return;
+    turn='player';
+    updateStatus("Your turn!");
+  }
+
+  function applyPick(num){
+    remaining=remaining.filter(x=>x!==num);
+    if(flat(playerBoard).includes(num))playerMarked.add(num);
+    if(flat(compBoard).includes(num))compMarked.add(num);
+    refreshMarks();
+  }
+
+  function checkWin(){
+    const letters='BINGO';
+    const pc=countLines(playerBoard,playerMarked);
+    const cc=countLines(compBoard,compMarked);
+    updateStatus(`Player: ${letters.slice(0,pc)}  Computer: ${letters.slice(0,cc)}`);
+    if(pc>=5){gameOver=true;alert("🎉 You Win!");return true;}
+    if(cc>=5){gameOver=true;alert("💻 Computer Wins!");return true;}
+    return false;
+  }
+
+  function countLines(board,marks){
+    let c=0;
+    for(let r=0;r<GRID;r++)if(board[r].every(n=>marks.has(n)))c++;
+    for(let c2=0;c2<GRID;c2++)if(board.map(r=>r[c2]).every(n=>marks.has(n)))c++;
+    if(board.map((r,i)=>r[i]).every(n=>marks.has(n)))c++;
+    if(board.map((r,i)=>r[GRID-1-i]).every(n=>marks.has(n)))c++;
+    return Math.min(5,c);
+  }
+
+  function chunk(a,n){return Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,i*n+n));}
+  function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+  function flat(a){return[].concat(...a);}
+  function updateStatus(msg){statusEl.textContent=msg;}
+
+  btnStart.onclick=newGame;
+})();
+</script>
+</body>
+</html>
+git init
+git add .
+git commit -m "Initial commit - Wildlife Bingo Game"
+git branch -M main
+git remote add origin https://github.com/yourusername/wildlife-bingo.git
+git push -u origin main
